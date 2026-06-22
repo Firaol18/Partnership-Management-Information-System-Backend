@@ -1,0 +1,543 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                                         String                               @id @default(uuid())
+  user_type                                  UserType
+  id_type                                    IdType
+  migrated_from_xoka_system                  Boolean                              @default(false)
+  name                                       String
+  username                                   String                               @unique
+  password                                   String?
+  phone_number                               String                               @unique
+  email                                      String?                              @unique
+  code_hash                                  String?
+  profile_image                              String?
+  code_expiration                            DateTime?
+  require_password_change                    Boolean                              @default(false)
+  username_verified                          Boolean                              @default(false)
+  username_verified_at                       DateTime?
+  is_active                                  Boolean                              @default(true)
+  active_status_updated_at                   DateTime?
+  active_status_updated_by_id                String?
+  status_update_note                         String?
+  is_suspended                               Boolean                              @default(false)
+  suspended_status_updated_at                DateTime?
+  suspended_status_updated_by_id             String?
+  suspended_status_update_note               String?
+  secondary_id_type                          IdType?
+  secondary_id                               String?
+  primary_id_verified                        Boolean                              @default(false)
+  secondary_id_verified                      Boolean                              @default(false)
+  admin_created                              Boolean                              @default(false)
+  created_at                                 DateTime                             @default(now())
+  updated_at                                 DateTime                             @updatedAt
+  created_by_id                              String?
+  updated_by_id                              String?
+  loginHistories                             LoginHistory[]
+  otps                                       Otp[]
+  userRoles                                  UserRole[]
+  notifications                              Notification[]
+
+  @@map("users")
+}
+
+model Employee {
+  id                             String    @id @default(uuid())
+  name                           String
+  username                       String    @unique
+  password                       String?
+  phone_number                   String    @unique
+  email                          String?   @unique
+  code_hash                      String?
+  profile_image                  String?
+  code_expiration                DateTime?
+  require_password_change        Boolean   @default(false)
+  username_verified              Boolean   @default(false)
+  username_verified_at           DateTime?
+  is_active                      Boolean   @default(true)
+  active_status_updated_at       DateTime?
+  active_status_updated_by_id    String?
+  status_update_note             String?
+  is_suspended                   Boolean   @default(false)
+  suspended_status_updated_at    DateTime?
+  suspended_status_updated_by_id String?
+  suspended_status_update_note   String?
+  average_rating                 Float?
+  rating_count                   Int       @default(0)
+  group_id                       String?
+  group                          Group?    @relation(fields: [group_id], references: [id], onDelete: SetNull)
+  is_supervisor                  Boolean   @default(false)
+  created_at                     DateTime  @default(now())
+  updated_at                     DateTime  @updatedAt
+  created_by_id                  String?
+  updated_by_id                  String?
+  employeeLoginHistories         EmployeeLoginHistory[]
+  employeeRoles                  EmployeeRole[]
+  otps                           Otp[]
+  notifications                  Notification[]
+  eventsCreated                  EventAndVisit[]           @relation("EventCreatedBy")
+  eventsVerified                 EventAndVisit[]           @relation("EventVerifiedBy")
+  eventsApproved                 EventAndVisit[]           @relation("EventApprovedBy")
+  eventsAssigned                 EventAndVisit[]           @relation("EventAssignedEmployee")
+  opportunitiesCreated           PartnershipOpportunity[]  @relation("OppCreatedBy")
+  opportunitiesScreened          PartnershipOpportunity[]  @relation("OppScreenedBy")
+  opportunitiesVerified          PartnershipOpportunity[]  @relation("OppVerifiedBy")
+  opportunitiesForwarded         PartnershipOpportunity[]  @relation("OppForwardedBy")
+  opportunitiesReviewed          PartnershipOpportunity[]  @relation("OppReviewedBy")
+  opportunitiesApproved          PartnershipOpportunity[]  @relation("OppApprovedBy")
+
+  @@map("employees")
+}
+
+model Group {
+  id              String  @id @default(uuid())
+  name            String  @unique
+  description     String?
+  parent_group_id String?
+  path            String? // optional: materialized path for fast descendant lookups
+  draft           Boolean   @default(false)
+  drafted_at      DateTime?
+  drafted_by_id   String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  parent          Group?    @relation("GroupParent", fields: [parent_group_id], references: [id], onDelete: SetNull)
+  children        Group[]   @relation("GroupParent")
+  employees       Employee[]
+  opportunities   PartnershipOpportunity[]
+
+  @@index([parent_group_id])
+  @@index([path])
+  @@map("groups")
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  user_id     String?
+  employee_id String?
+  type        String
+  payload     Json
+  status      String    @default("unread")
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  expires_at  DateTime?
+
+  user     User?     @relation(fields: [user_id], references: [id])
+  employee Employee? @relation(fields: [employee_id], references: [id])
+
+  @@index([user_id, status, created_at])
+  @@index([employee_id, status, created_at])
+  @@index([user_id, created_at])
+  @@index([employee_id, created_at])
+  @@map("notifications")
+}
+
+model Role {
+  id                      String                   @id @default(uuid())
+  name                    String                   @unique
+  description             String?
+  switchable              Boolean                  @default(false)
+  editable                Boolean                  @default(false)
+  draft                   Boolean                  @default(false)
+  created_at              DateTime                 @default(now())
+  updated_at              DateTime                 @updatedAt
+  employeeRoles           EmployeeRole[]
+  rolePermissionResources RolePermissionResource[]
+  userRoles               UserRole[]
+
+  @@map("roles")
+}
+
+model PermissionResource {
+  id                      String                   @id @default(uuid())
+  name                    String                   @unique
+  description             String?
+  draft                   Boolean                  @default(false)
+  created_at              DateTime                 @default(now())
+  updated_at              DateTime                 @updatedAt
+  rolePermissionResources RolePermissionResource[]
+
+  @@map("permission_resources")
+}
+
+model PermissionAction {
+  id                            String                         @id @default(uuid())
+  action                        String                         @unique
+  description                   String?
+  draft                         Boolean                        @default(false)
+  created_at                    DateTime                       @default(now())
+  updated_at                    DateTime                       @updatedAt
+  rolePermissionResourceActions RolePermissionResourceAction[]
+
+  @@map("permission_actions")
+}
+
+model RolePermissionResource {
+  id                            String                         @id @default(uuid())
+  role_id                       String
+  permission_resource_id        String
+  created_at                    DateTime                       @default(now())
+  updated_at                    DateTime                       @updatedAt
+  rolePermissionResourceActions RolePermissionResourceAction[]
+  permissionResource            PermissionResource             @relation(fields: [permission_resource_id], references: [id])
+  role                          Role                           @relation(fields: [role_id], references: [id])
+
+  @@unique([permission_resource_id, role_id])
+  @@map("role_permission_resources")
+}
+
+model RolePermissionResourceAction {
+  id                          String                 @id @default(uuid())
+  permission_action_id        String
+  role_permission_resource_id String
+  created_at                  DateTime               @default(now())
+  updated_at                  DateTime               @updatedAt
+  permissionAction            PermissionAction       @relation(fields: [permission_action_id], references: [id])
+  rolePermissionResource      RolePermissionResource @relation(fields: [role_permission_resource_id], references: [id])
+
+  @@unique([role_permission_resource_id, permission_action_id])
+  @@map("role_permission_resource_actions")
+}
+
+model UserRole {
+  id            String    @id @default(uuid())
+  user_id       String
+  role_id       String
+  created_at    DateTime  @default(now())
+  updated_at    DateTime? @updatedAt
+  created_by_id String?
+  updated_by_id String?
+  role          Role      @relation(fields: [role_id], references: [id])
+  user          User      @relation(fields: [user_id], references: [id])
+
+  @@unique([role_id, user_id])
+  @@map("user_roles")
+}
+
+model EmployeeRole {
+  id            String    @id @default(uuid())
+  employee_id   String
+  role_id       String
+  created_at    DateTime  @default(now())
+  updated_at    DateTime? @updatedAt
+  created_by_id String?
+  updated_by_id String?
+  employee      Employee  @relation(fields: [employee_id], references: [id])
+  role          Role      @relation(fields: [role_id], references: [id])
+
+  @@unique([role_id, employee_id])
+  @@map("employee_roles")
+}
+
+model RefreshToken {
+  id                      String    @id @default(uuid())
+  jti                     String    @unique
+  family_id               String
+  subject_user_id         String
+  subject_type            String
+  issued_at               DateTime  @default(now())
+  expires_at              DateTime
+  rotated_at              DateTime?
+  revoked_at              DateTime?
+  revoked_reason          String?
+  last_ip                 String?
+  last_user_agent         String?
+  last_device_fingerprint String?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  @@index([family_id])
+  @@index([subject_user_id, subject_type])
+  @@index([expires_at])
+  @@index([revoked_at])
+  @@map("refresh_tokens")
+}
+
+model Session {
+  id                 String    @id @default(uuid())
+  session_id         String    @unique
+  user_id            String
+  user_type          String
+  last_seen_at       DateTime  @default(now())
+  expires_at         DateTime
+  idle_timeout_at    DateTime
+  ip                 String?
+  user_agent         String?
+  device_fingerprint String?
+  revoked_at         DateTime?
+  revoked_reason     String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  @@index([user_id, user_type])
+  @@index([expires_at])
+  @@index([idle_timeout_at])
+  @@index([revoked_at])
+  @@map("sessions")
+}
+
+model AuthAuditLog {
+  id          String   @id @default(uuid())
+  event_id    String   @unique
+  occurred_at DateTime @default(now())
+  actor_type  String
+  actor_id    String
+  action      String
+  result      String
+  ip          String?
+  user_agent  String?
+  token_jti   String?
+  session_id  String?
+  metadata    Json?
+  created_at  DateTime @default(now())
+
+  @@index([actor_type, actor_id])
+  @@index([action])
+  @@index([occurred_at])
+  @@index([token_jti])
+  @@index([session_id])
+  @@map("auth_audit_logs")
+}
+
+model RevokedAccessToken {
+  id             String   @id @default(uuid())
+  jti            String   @unique
+  expires_at     DateTime
+  revoked_at     DateTime @default(now())
+  revoked_reason String
+  created_at     DateTime @default(now())
+
+  @@index([expires_at])
+  @@map("revoked_access_tokens")
+}
+
+model LoginHistory {
+  id         String   @id @default(uuid())
+  user_id    String
+  ip_address String
+  lat        String?
+  lng        String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  user       User     @relation(fields: [user_id], references: [id])
+
+  @@map("login_histories")
+}
+
+model EmployeeLoginHistory {
+  id            String   @id @default(uuid())
+  is_successful Boolean  @default(true)
+  employee_id   String
+  ip_address    String
+  lat           String?
+  lng           String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  employee      Employee @relation(fields: [employee_id], references: [id])
+
+  @@map("employee_login_histories")
+}
+
+model Otp {
+  id           String    @id @default(uuid())
+  user_id      String?
+  employee_id  String?
+  otp          String
+  otp_hash     String
+  attempts     Int       @default(0)
+  max_attempts Int       @default(5)
+  locked_until DateTime?
+  purpose      String    @default("verification")
+  created_at   DateTime  @default(now())
+  expires_at   DateTime
+  user         User?     @relation(fields: [user_id], references: [id])
+  employee     Employee? @relation(fields: [employee_id], references: [id])
+
+  @@index([user_id, purpose])
+  @@index([employee_id, purpose])
+  @@index([expires_at])
+  @@map("otp")
+}
+
+model AuthAttempt {
+  id             String   @id @default(uuid())
+  identifier     String
+  attempt_type   String
+  ip_address     String?
+  user_agent     String?
+  attempted_at   DateTime @default(now())
+  success        Boolean  @default(false)
+  failure_reason String?
+  metadata       Json?
+
+  @@index([identifier])
+  @@index([attempt_type])
+  @@index([ip_address])
+  @@index([attempted_at])
+  @@map("auth_attempts")
+}
+
+enum UserType {
+  ORGANIZATION
+  INDIVIDUAL
+}
+
+enum IdType {
+  FAYDA_ID
+  GOVERNMENT_ID
+  TIN_NUMBER
+  PASSPORT
+  ORIGIN_ID
+  BIRTH_CERTIFICATE
+}
+
+enum EventType {
+  OFFICIAL_VISIT
+  CONFERENCE
+  MEETING
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model EventAndVisit {
+  id                      String             @id @default(uuid())
+  event_name              String
+  event_type              EventType
+  date                    DateTime
+  venue                   String
+  partner_representatives String             @db.Text
+  eaii_representatives    String             @db.Text
+  agreements_reached      String?            @db.Text
+  action_points           String?            @db.Text
+
+  // Workflow / Status
+  verification_status     VerificationStatus @default(PENDING)
+  verification_note       String?            @db.Text
+  verified_by             Employee?          @relation("EventVerifiedBy", fields: [verified_by_id], references: [id])
+  verified_by_id          String?
+  verified_at             DateTime?
+
+  approval_status         ApprovalStatus     @default(PENDING)
+  approval_note           String?            @db.Text
+  approved_by             Employee?          @relation("EventApprovedBy", fields: [approved_by_id], references: [id])
+  approved_by_id          String?
+  approved_at             DateTime?
+
+  assigned_employee       Employee?          @relation("EventAssignedEmployee", fields: [assigned_employee_id], references: [id])
+  assigned_employee_id    String?
+
+  created_by              Employee           @relation("EventCreatedBy", fields: [created_by_id], references: [id])
+  created_by_id           String
+  created_at              DateTime           @default(now())
+  updated_at              DateTime           @updatedAt
+
+  @@map("events_and_visits")
+}
+
+
+enum SourceOfOpportunity {
+  PARTNER_PROPOSAL
+  MARKET_RESEARCH
+  GOVERNMENT_DIRECTIVE
+  STAKEHOLDER_REFERRAL
+  INTERNAL_INITIATIVE
+  INTERNATIONAL_COLLABORATION
+  OTHER
+}
+
+enum OppScreeningStatus {
+  PENDING
+  SCREENED
+  REJECTED
+}
+
+enum OppVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OppReviewStatus {
+  PENDING
+  REVIEWED
+  REJECTED
+}
+
+enum OppApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PartnershipOpportunity {
+  id                     String               @id @default(uuid())
+  opportunity_code       String?              @unique
+  title                  String
+  date_identified        DateTime
+  source_of_opportunity  SourceOfOpportunity
+  description            String               @db.Text
+  strategic_alignment    String[]
+  expected_benefits      String[]
+
+  // Stage 1: Knowledge & Ecosystem Director — Screening
+  screening_status       OppScreeningStatus   @default(PENDING)
+  screening_note         String?              @db.Text
+  screened_by            Employee?            @relation("OppScreenedBy", fields: [screened_by_id], references: [id])
+  screened_by_id         String?
+  screened_at            DateTime?
+
+  // Stage 2: Knowledge & Ecosystem Director — Verification
+  verification_status    OppVerificationStatus @default(PENDING)
+  verification_note      String?              @db.Text
+  verified_by            Employee?            @relation("OppVerifiedBy", fields: [verified_by_id], references: [id])
+  verified_by_id         String?
+  verified_at            DateTime?
+
+  // Stage 3: Knowledge & Ecosystem Director — Forward to Division
+  forwarded_to_division  Group?               @relation(fields: [forwarded_to_division_id], references: [id])
+  forwarded_to_division_id String?
+  forwarded_by           Employee?            @relation("OppForwardedBy", fields: [forwarded_by_id], references: [id])
+  forwarded_by_id        String?
+  forwarded_at           DateTime?
+
+  // Stage 4: Division Director — Review
+  review_status          OppReviewStatus      @default(PENDING)
+  review_note            String?              @db.Text
+  reviewed_by            Employee?            @relation("OppReviewedBy", fields: [reviewed_by_id], references: [id])
+  reviewed_by_id         String?
+  reviewed_at            DateTime?
+
+  // Stage 5: Division Director — Approve (APPROVED = transferred to waiting list)
+  approval_status        OppApprovalStatus    @default(PENDING)
+  approval_note          String?              @db.Text
+  approved_by            Employee?            @relation("OppApprovedBy", fields: [approved_by_id], references: [id])
+  approved_by_id         String?
+  approved_at            DateTime?
+
+  created_by             Employee             @relation("OppCreatedBy", fields: [created_by_id], references: [id])
+  created_by_id          String
+  created_at             DateTime             @default(now())
+  updated_at             DateTime             @updatedAt
+
+  @@index([screening_status])
+  @@index([verification_status])
+  @@index([approval_status])
+  @@index([forwarded_to_division_id])
+  @@map("partnership_opportunities")
+}

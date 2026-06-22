@@ -1,0 +1,17 @@
+export enum ACTIONS {
+  READ = 'Read',
+  READ_ONE = 'ReadOne',
+  ACCEPT = 'Accept',
+  CHECK = 'Check',
+  CREATE = 'Create',
+  UPDATE = 'Update',
+  DELETE = 'Delete',
+  REJECT = 'Reject',
+  APPROVE = 'Approve',
+  VERIFY = 'Verify',
+  VALIDATE = 'Validate',
+  AUTHORIZE = 'Authorize',
+  CLOSE = 'Close',
+  ARCHIVE = 'Archive',
+  DISPATCH = 'Dispatch',
+}

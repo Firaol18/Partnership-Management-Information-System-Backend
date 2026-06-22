@@ -1,0 +1,17 @@
+export enum RESOURCE {
+  CONFIGURATION = 'configuration',
+  EMPLOYEE = 'employee',
+  USER = 'user',
+  ROLE = 'role',
+  PERMISSION_RESOURCE = 'permission-resource',
+  PERMISSION_ACTION = 'permission-action',
+  EMPLOYEE_ROLE = 'employee-role',
+  USER_ROLE = 'user-role',
+  SERVICE_ACCOUNTS = 'service-account',
+  FORM = 'form',
+  PAYMENT = 'payment',
+  SMS_LOGS = 'sms-logs',
+  EVENT_AND_VISIT = 'event-and-visit',
+  PARTNERSHIP_OPPORTUNITY = 'partnership-opportunity',
+}
+
