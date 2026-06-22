@@ -462,9 +462,8 @@ enum SourceOfOpportunity {
 }
 
 enum OppScreeningStatus {
-  PENDING
-  SCREENED
-  REJECTED
+  NEW
+  UNDER_REVIEW
 }
 
 enum OppVerificationStatus {
@@ -496,7 +495,7 @@ model PartnershipOpportunity {
   expected_benefits      String[]
 
   // Stage 1: Knowledge & Ecosystem Director — Screening
-  screening_status       OppScreeningStatus   @default(PENDING)
+  screening_status       OppScreeningStatus   @default(NEW)
   screening_note         String?              @db.Text
   screened_by            Employee?            @relation("OppScreenedBy", fields: [screened_by_id], references: [id])
   screened_by_id         String?

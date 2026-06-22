@@ -33,7 +33,7 @@ describe('PartnershipOpportunityService', () => {
     id: 'opp-1',
     opportunity_code: 'OPP-2026-0001',
     title: 'NLP Research',
-    screening_status: OppScreeningStatus.PENDING,
+    screening_status: OppScreeningStatus.NEW,
     verification_status: OppVerificationStatus.PENDING,
     review_status: OppReviewStatus.PENDING,
     approval_status: OppApprovalStatus.PENDING,
@@ -91,7 +91,7 @@ describe('PartnershipOpportunityService', () => {
     it('should throw BadRequestException if already screened', async () => {
       prisma.partnershipOpportunity.findUnique.mockResolvedValue({
         ...mockRecord,
-        screening_status: OppScreeningStatus.SCREENED,
+        screening_status: OppScreeningStatus.UNDER_REVIEW,
       });
       await expect(
         service.update('opp-1', { title: 'New' }, 'emp-1'),
@@ -119,13 +119,13 @@ describe('PartnershipOpportunityService', () => {
       prisma.partnershipOpportunity.findUnique.mockResolvedValue(mockRecord);
       prisma.partnershipOpportunity.update.mockResolvedValue({
         ...mockRecord,
-        screening_status: OppScreeningStatus.SCREENED,
+        screening_status: OppScreeningStatus.UNDER_REVIEW,
       });
 
-      const result = await service.screen('opp-1', { status: OppScreeningStatus.SCREENED }, 'emp-2');
+      const result = await service.screen('opp-1', { status: OppScreeningStatus.UNDER_REVIEW }, 'emp-2');
       expect(prisma.partnershipOpportunity.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ screening_status: OppScreeningStatus.SCREENED }),
+          data: expect.objectContaining({ screening_status: OppScreeningStatus.UNDER_REVIEW }),
         }),
       );
     });
@@ -133,7 +133,7 @@ describe('PartnershipOpportunityService', () => {
 
   describe('verify', () => {
     it('should throw BadRequestException if not yet screened', async () => {
-      prisma.partnershipOpportunity.findUnique.mockResolvedValue(mockRecord); // screening_status: PENDING
+      prisma.partnershipOpportunity.findUnique.mockResolvedValue(mockRecord); // screening_status: NEW
       await expect(
         service.verify('opp-1', { status: OppVerificationStatus.VERIFIED }, 'emp-2'),
       ).rejects.toThrow(BadRequestException);
@@ -142,7 +142,7 @@ describe('PartnershipOpportunityService', () => {
     it('should verify if screened', async () => {
       prisma.partnershipOpportunity.findUnique.mockResolvedValue({
         ...mockRecord,
-        screening_status: OppScreeningStatus.SCREENED,
+        screening_status: OppScreeningStatus.UNDER_REVIEW,
       });
       prisma.partnershipOpportunity.update.mockResolvedValue({
         ...mockRecord,
@@ -216,7 +216,7 @@ describe('PartnershipOpportunityService', () => {
     it('should throw BadRequestException if already screened', async () => {
       prisma.partnershipOpportunity.findUnique.mockResolvedValue({
         ...mockRecord,
-        screening_status: OppScreeningStatus.SCREENED,
+        screening_status: OppScreeningStatus.UNDER_REVIEW,
       });
       await expect(service.remove('opp-1', 'emp-1')).rejects.toThrow(BadRequestException);
     });

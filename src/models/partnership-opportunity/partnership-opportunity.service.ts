@@ -103,7 +103,7 @@ export class PartnershipOpportunityService {
   async update(id: string, data: UpdatePartnershipOpportunityDto, currentEmployeeId: string) {
     const record = await this.findOne(id);
 
-    if (record.screening_status !== 'PENDING') {
+    if (record.screening_status !== OppScreeningStatus.NEW) {
       throw new BadRequestException('Cannot modify an opportunity that has already been screened');
     }
     if (record.created_by_id !== currentEmployeeId) {
@@ -131,7 +131,7 @@ export class PartnershipOpportunityService {
   async remove(id: string, currentEmployeeId: string) {
     const record = await this.findOne(id);
 
-    if (record.screening_status !== 'PENDING') {
+    if (record.screening_status !== OppScreeningStatus.NEW) {
       throw new BadRequestException('Cannot delete an opportunity that has already been screened');
     }
     if (record.created_by_id !== currentEmployeeId) {
@@ -164,7 +164,7 @@ export class PartnershipOpportunityService {
   async verify(id: string, data: VerifyOpportunityDto, verifiedById: string) {
     const record = await this.findOne(id);
 
-    if (record.screening_status !== OppScreeningStatus.SCREENED && data.status === OppVerificationStatus.VERIFIED) {
+    if (record.screening_status !== OppScreeningStatus.UNDER_REVIEW && data.status === OppVerificationStatus.VERIFIED) {
       throw new BadRequestException('Cannot verify an opportunity that has not been screened yet');
     }
 

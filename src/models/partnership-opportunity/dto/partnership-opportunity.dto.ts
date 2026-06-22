@@ -51,9 +51,8 @@ export enum ExpectedBenefit {
 }
 
 export enum OppScreeningStatus {
-  PENDING = 'PENDING',
-  SCREENED = 'SCREENED',
-  REJECTED = 'REJECTED',
+  NEW = 'NEW',
+  UNDER_REVIEW = 'UNDER_REVIEW',
 }
 
 export enum OppVerificationStatus {
@@ -167,16 +166,14 @@ export class UpdatePartnershipOpportunityDto {
 export class ScreenOpportunityDto {
   @ApiProperty({
     enum: OppScreeningStatus,
-    example: OppScreeningStatus.SCREENED,
-    description: 'Screening result: SCREENED or REJECTED',
+    example: OppScreeningStatus.UNDER_REVIEW,
+    description: 'Screening status: NEW or UNDER_REVIEW',
   })
   @IsNotEmpty()
   @IsEnum(OppScreeningStatus)
   status: OppScreeningStatus;
 
-  @ApiProperty({ required: false, description: 'Required when status is REJECTED' })
-  @ValidateIf((o) => o.status === OppScreeningStatus.REJECTED)
-  @IsNotEmpty({ message: 'A rejection reason is required when rejecting' })
+  @ApiProperty({ required: false, description: 'Optional note for screening' })
   @IsOptional()
   @IsString()
   note?: string;
