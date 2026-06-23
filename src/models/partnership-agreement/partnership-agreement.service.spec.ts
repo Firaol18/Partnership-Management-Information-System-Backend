@@ -11,6 +11,9 @@ import {
   UpdatePartnershipAgreementDto,
   LegalReviewPartnershipAgreementDto,
   ApprovePartnershipAgreementDto,
+  UploadSignedAgreementDto,
+  RenewAgreementDto,
+  TerminateAgreementDto,
   SearchPartnershipAgreementDto,
 } from './dto';
 
@@ -31,6 +34,7 @@ const mockPartner = { id: 'partner-123', name: 'UNDP' };
 const mockDivision = { id: 'div-123', name: 'Research Division' };
 const mockEngagement = { id: 'eng-123', engagement_code: 'ENG-2026-0001', status: 'APPROVED' };
 
+/** Base agreement in DRAFT status */
 const mockAgreement = {
   id: 'agr-123',
   agreement_code: 'AGR-2026-0001',
@@ -155,7 +159,7 @@ describe('PartnershipAgreementService', () => {
       );
     });
 
-    it('should throw BadRequestException if not in DRAFT or REJECTED status', async () => {
+    it('should throw BadRequestException if not in DRAFT status', async () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue({
         ...mockAgreement,
         status: AgreementStatus.UNDER_REVIEW,
@@ -187,10 +191,10 @@ describe('PartnershipAgreementService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException if not in DRAFT or REJECTED', async () => {
+    it('should throw BadRequestException if not in DRAFT status', async () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue({
         ...mockAgreement,
-        status: AgreementStatus.APPROVED,
+        status: AgreementStatus.UNDER_REVIEW,
       });
       await expect(
         service.submitForLegalReview('agr-123', 'employee-001'),
@@ -206,7 +210,7 @@ describe('PartnershipAgreementService', () => {
       status: AgreementStatus.UNDER_REVIEW,
     };
 
-    it('should verify agreement (UNDER_REVIEW → VERIFIED)', async () => {
+    it('should set legal_review_status=VERIFIED, status stays UNDER_REVIEW', async () => {
       const dto: LegalReviewPartnershipAgreementDto = {
         status: AgreementLegalReviewStatus.VERIFIED,
         note: 'All good',
@@ -214,15 +218,16 @@ describe('PartnershipAgreementService', () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue(underReviewAgreement);
       prisma.partnershipAgreement.update.mockResolvedValue({
         ...underReviewAgreement,
-        status: AgreementStatus.VERIFIED,
+        status: AgreementStatus.UNDER_REVIEW,
         legal_review_status: AgreementLegalReviewStatus.VERIFIED,
       });
 
       const result = await service.legalReview('agr-123', dto, 'legal-001');
-      expect(result.status).toBe(AgreementStatus.VERIFIED);
+      expect(result.legal_review_status).toBe(AgreementLegalReviewStatus.VERIFIED);
+      expect(result.status).toBe(AgreementStatus.UNDER_REVIEW);
     });
 
-    it('should reject agreement (UNDER_REVIEW → REJECTED)', async () => {
+    it('should set legal_review_status=REJECTED and move status to DRAFT', async () => {
       const dto: LegalReviewPartnershipAgreementDto = {
         status: AgreementLegalReviewStatus.REJECTED,
         note: 'Missing clauses',
@@ -230,12 +235,23 @@ describe('PartnershipAgreementService', () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue(underReviewAgreement);
       prisma.partnershipAgreement.update.mockResolvedValue({
         ...underReviewAgreement,
-        status: AgreementStatus.REJECTED,
+        status: AgreementStatus.DRAFT,
         legal_review_status: AgreementLegalReviewStatus.REJECTED,
       });
 
       const result = await service.legalReview('agr-123', dto, 'legal-001');
-      expect(result.status).toBe(AgreementStatus.REJECTED);
+      expect(result.status).toBe(AgreementStatus.DRAFT);
+      expect(result.legal_review_status).toBe(AgreementLegalReviewStatus.REJECTED);
+    });
+
+    it('should throw BadRequestException if REJECTED without a note', async () => {
+      const dto: LegalReviewPartnershipAgreementDto = {
+        status: AgreementLegalReviewStatus.REJECTED,
+      };
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(underReviewAgreement);
+      await expect(
+        service.legalReview('agr-123', dto, 'legal-001'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException if not in UNDER_REVIEW', async () => {
@@ -253,12 +269,14 @@ describe('PartnershipAgreementService', () => {
   // ─── approve ──────────────────────────────────────────────────────────────
 
   describe('approve', () => {
+    /** Agreement in UNDER_REVIEW and legally VERIFIED — ready for director decision */
     const verifiedAgreement = {
       ...mockAgreement,
-      status: AgreementStatus.VERIFIED,
+      status: AgreementStatus.UNDER_REVIEW,
+      legal_review_status: AgreementLegalReviewStatus.VERIFIED,
     };
 
-    it('should approve agreement (VERIFIED → APPROVED)', async () => {
+    it('should approve — approval_status=APPROVED, status stays UNDER_REVIEW (awaiting signature)', async () => {
       const dto: ApprovePartnershipAgreementDto = {
         status: AgreementApprovalStatus.APPROVED,
         note: 'Approved for signing',
@@ -266,15 +284,17 @@ describe('PartnershipAgreementService', () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue(verifiedAgreement);
       prisma.partnershipAgreement.update.mockResolvedValue({
         ...verifiedAgreement,
-        status: AgreementStatus.APPROVED,
+        status: AgreementStatus.UNDER_REVIEW,
         approval_status: AgreementApprovalStatus.APPROVED,
       });
 
       const result = await service.approve('agr-123', dto, 'director-001');
-      expect(result.status).toBe(AgreementStatus.APPROVED);
+      expect(result.approval_status).toBe(AgreementApprovalStatus.APPROVED);
+      // stays UNDER_REVIEW until the officer uploads the signed doc
+      expect(result.status).toBe(AgreementStatus.UNDER_REVIEW);
     });
 
-    it('should reject agreement (VERIFIED → REJECTED)', async () => {
+    it('should reject — approval_status=REJECTED, status moves to DRAFT', async () => {
       const dto: ApprovePartnershipAgreementDto = {
         status: AgreementApprovalStatus.REJECTED,
         note: 'Budget constraints',
@@ -282,23 +302,223 @@ describe('PartnershipAgreementService', () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue(verifiedAgreement);
       prisma.partnershipAgreement.update.mockResolvedValue({
         ...verifiedAgreement,
-        status: AgreementStatus.REJECTED,
+        status: AgreementStatus.DRAFT,
         approval_status: AgreementApprovalStatus.REJECTED,
       });
 
       const result = await service.approve('agr-123', dto, 'director-001');
-      expect(result.status).toBe(AgreementStatus.REJECTED);
+      expect(result.status).toBe(AgreementStatus.DRAFT);
     });
 
-    it('should throw BadRequestException if not in VERIFIED status', async () => {
+    it('should throw BadRequestException if not in UNDER_REVIEW', async () => {
       prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
       await expect(
         service.approve(
           'agr-123',
-          { status: AgreementApprovalStatus.APPROVED },
+          { status: AgreementApprovalStatus.APPROVED, note: 'ok' },
           'director-001',
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if legal review not VERIFIED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.UNDER_REVIEW,
+        legal_review_status: AgreementLegalReviewStatus.PENDING,
+      });
+      await expect(
+        service.approve(
+          'agr-123',
+          { status: AgreementApprovalStatus.APPROVED, note: 'ok' },
+          'director-001',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if REJECTED without a note', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(verifiedAgreement);
+      await expect(
+        service.approve('agr-123', { status: AgreementApprovalStatus.REJECTED }, 'director-001'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── sign ─────────────────────────────────────────────────────────────────
+
+  describe('sign', () => {
+    const approvedAgreement = {
+      ...mockAgreement,
+      status: AgreementStatus.UNDER_REVIEW,
+      approval_status: AgreementApprovalStatus.APPROVED,
+      legal_review_status: AgreementLegalReviewStatus.VERIFIED,
+    };
+
+    const dto: UploadSignedAgreementDto = {
+      signed_version: 'https://storage.example.com/signed.pdf',
+      signing_date: '2026-06-23',
+    };
+
+    it('should move UNDER_REVIEW (director-approved) → SIGNED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(approvedAgreement);
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...approvedAgreement,
+        status: AgreementStatus.SIGNED,
+        signed_version: dto.signed_version,
+        signing_date: new Date(dto.signing_date),
+      });
+
+      const result = await service.sign('agr-123', dto, 'employee-001');
+      expect(result.status).toBe(AgreementStatus.SIGNED);
+      expect(result.signed_version).toBe(dto.signed_version);
+    });
+
+    it('should throw BadRequestException if not in UNDER_REVIEW', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
+      await expect(service.sign('agr-123', dto, 'employee-001')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if approval_status is not APPROVED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...approvedAgreement,
+        approval_status: AgreementApprovalStatus.PENDING,
+      });
+      await expect(service.sign('agr-123', dto, 'employee-001')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  // ─── activate ─────────────────────────────────────────────────────────────
+
+  describe('activate', () => {
+    it('should move SIGNED → ACTIVE', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.SIGNED,
+      });
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.ACTIVE,
+      });
+
+      const result = await service.activate('agr-123');
+      expect(result.status).toBe(AgreementStatus.ACTIVE);
+    });
+
+    it('should throw BadRequestException if not in SIGNED status', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
+      await expect(service.activate('agr-123')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── expire ───────────────────────────────────────────────────────────────
+
+  describe('expire', () => {
+    it('should move ACTIVE → EXPIRED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.ACTIVE,
+      });
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.EXPIRED,
+      });
+
+      const result = await service.expire('agr-123');
+      expect(result.status).toBe(AgreementStatus.EXPIRED);
+    });
+
+    it('should throw BadRequestException if not in ACTIVE status', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
+      await expect(service.expire('agr-123')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── renew ────────────────────────────────────────────────────────────────
+
+  describe('renew', () => {
+    const dto: RenewAgreementDto = {
+      end_date: '2027-06-23',
+      renewal_date: '2027-05-23',
+      description: 'Renewed for another year',
+      url: 'https://storage.example.com/renewal.pdf',
+    };
+
+    it('should renew an ACTIVE agreement → RENEWED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.ACTIVE,
+        amendments: [],
+      });
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.RENEWED,
+        end_date: new Date(dto.end_date),
+        amendments: [
+          {
+            description: dto.description,
+            url: dto.url,
+            amended_at: expect.any(String),
+          },
+        ],
+      });
+
+      const result = await service.renew('agr-123', dto);
+      expect(result.status).toBe(AgreementStatus.RENEWED);
+    });
+
+    it('should renew an EXPIRED agreement → RENEWED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.EXPIRED,
+        amendments: [],
+      });
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.RENEWED,
+      });
+
+      const result = await service.renew('agr-123', dto);
+      expect(result.status).toBe(AgreementStatus.RENEWED);
+    });
+
+    it('should throw BadRequestException if not ACTIVE or EXPIRED', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
+      await expect(service.renew('agr-123', dto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── terminate ────────────────────────────────────────────────────────────
+
+  describe('terminate', () => {
+    const dto: TerminateAgreementDto = {
+      termination_note: 'Project completed',
+    };
+
+    it.each([
+      AgreementStatus.SIGNED,
+      AgreementStatus.ACTIVE,
+      AgreementStatus.RENEWED,
+    ])('should terminate a %s agreement → TERMINATED', async (status) => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue({
+        ...mockAgreement,
+        status,
+      });
+      prisma.partnershipAgreement.update.mockResolvedValue({
+        ...mockAgreement,
+        status: AgreementStatus.TERMINATED,
+      });
+
+      const result = await service.terminate('agr-123', dto);
+      expect(result.status).toBe(AgreementStatus.TERMINATED);
+    });
+
+    it('should throw BadRequestException for non-terminatable status', async () => {
+      prisma.partnershipAgreement.findUnique.mockResolvedValue(mockAgreement); // DRAFT
+      await expect(service.terminate('agr-123', dto)).rejects.toThrow(BadRequestException);
     });
   });
 

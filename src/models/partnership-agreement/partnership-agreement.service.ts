@@ -9,10 +9,14 @@ import {
   UpdatePartnershipAgreementDto,
   LegalReviewPartnershipAgreementDto,
   ApprovePartnershipAgreementDto,
+  UploadSignedAgreementDto,
+  RenewAgreementDto,
+  TerminateAgreementDto,
   SearchPartnershipAgreementDto,
   AgreementStatus,
   AgreementLegalReviewStatus,
   AgreementApprovalStatus,
+  AmendmentDto,
 } from './dto';
 import { paginate } from '../../common/utils/paginater';
 import { Prisma } from '@prisma/client';
@@ -91,9 +95,7 @@ export class PartnershipAgreementService {
         end_date: dto.end_date ? new Date(dto.end_date) : undefined,
         renewal_date: dto.renewal_date ? new Date(dto.renewal_date) : undefined,
         signatories: (dto.signatories ?? []) as unknown as Prisma.InputJsonValue,
-        signing_date: dto.signing_date ? new Date(dto.signing_date) : undefined,
         draft_versions: (dto.draft_versions ?? []) as unknown as Prisma.InputJsonValue,
-        signed_version: dto.signed_version,
         amendments: (dto.amendments ?? []) as unknown as Prisma.InputJsonValue,
         partnership_engagement_id: dto.partnership_engagement_id,
         status: AgreementStatus.DRAFT,
@@ -117,13 +119,10 @@ export class PartnershipAgreementService {
       throw new NotFoundException('Partnership Agreement not found');
     }
 
-    // Only editable in DRAFT or REJECTED state
-    if (
-      agreement.status !== AgreementStatus.DRAFT &&
-      agreement.status !== AgreementStatus.REJECTED
-    ) {
+    // Only editable in DRAFT state (re-submit after legal rejection goes through submitForLegalReview)
+    if (agreement.status !== AgreementStatus.DRAFT) {
       throw new BadRequestException(
-        'Agreement can only be updated in DRAFT or REJECTED status',
+        'Agreement can only be updated in DRAFT status. Submit for legal review or use the re-submit action.',
       );
     }
 
@@ -145,7 +144,8 @@ export class PartnershipAgreementService {
       const engagement = await this.prisma.partnershipEngagement.findUnique({
         where: { id: dto.partnership_engagement_id },
       });
-      if (!engagement) throw new NotFoundException('Partnership Engagement not found');
+      if (!engagement)
+        throw new NotFoundException('Partnership Engagement not found');
     }
 
     return this.prisma.partnershipAgreement.update({
@@ -163,12 +163,8 @@ export class PartnershipAgreementService {
         ...(dto.signatories && {
           signatories: dto.signatories as unknown as Prisma.InputJsonValue,
         }),
-        ...(dto.signing_date && { signing_date: new Date(dto.signing_date) }),
         ...(dto.draft_versions && {
           draft_versions: dto.draft_versions as unknown as Prisma.InputJsonValue,
-        }),
-        ...(dto.signed_version !== undefined && {
-          signed_version: dto.signed_version,
         }),
         ...(dto.amendments && {
           amendments: dto.amendments as unknown as Prisma.InputJsonValue,
@@ -176,8 +172,6 @@ export class PartnershipAgreementService {
         ...(dto.partnership_engagement_id !== undefined && {
           partnership_engagement_id: dto.partnership_engagement_id,
         }),
-        // If previously REJECTED and being updated, move back to DRAFT
-        status: AgreementStatus.DRAFT,
       },
       include: defaultInclude,
     });
@@ -193,12 +187,9 @@ export class PartnershipAgreementService {
       throw new NotFoundException('Partnership Agreement not found');
     }
 
-    if (
-      agreement.status !== AgreementStatus.DRAFT &&
-      agreement.status !== AgreementStatus.REJECTED
-    ) {
+    if (agreement.status !== AgreementStatus.DRAFT) {
       throw new BadRequestException(
-        'Agreement must be in DRAFT or REJECTED status to submit for review',
+        'Agreement must be in DRAFT status to submit for legal review',
       );
     }
 
@@ -206,7 +197,7 @@ export class PartnershipAgreementService {
       where: { id },
       data: {
         status: AgreementStatus.UNDER_REVIEW,
-        // Reset previous review/approval
+        // Reset any previous review / approval cycle
         legal_review_status: AgreementLegalReviewStatus.PENDING,
         legal_review_note: null,
         legal_reviewed_by_id: null,
@@ -221,6 +212,8 @@ export class PartnershipAgreementService {
   }
 
   // ─── Legal Officer Review ─────────────────────────────────────────────────
+  //  UNDER_REVIEW → UNDER_REVIEW (with legal_review_status = VERIFIED or REJECTED)
+  //  If REJECTED: officer must fix and re-submit (move back to DRAFT for editing)
 
   async legalReview(
     id: string,
@@ -240,10 +233,20 @@ export class PartnershipAgreementService {
       );
     }
 
-    const isVerified = dto.status === AgreementLegalReviewStatus.VERIFIED;
-    const nextStatus = isVerified
-      ? AgreementStatus.VERIFIED
-      : AgreementStatus.REJECTED;
+    if (
+      dto.status === AgreementLegalReviewStatus.REJECTED &&
+      !dto.note?.trim()
+    ) {
+      throw new BadRequestException(
+        'A rejection note is required when rejecting a legal review',
+      );
+    }
+
+    // If rejected, move back to DRAFT so the officer can edit and re-submit
+    const nextStatus =
+      dto.status === AgreementLegalReviewStatus.REJECTED
+        ? AgreementStatus.DRAFT
+        : AgreementStatus.UNDER_REVIEW;
 
     return this.prisma.partnershipAgreement.update({
       where: { id },
@@ -259,6 +262,9 @@ export class PartnershipAgreementService {
   }
 
   // ─── Director Approval ────────────────────────────────────────────────────
+  //  Only allowed when legal_review_status = VERIFIED (still UNDER_REVIEW status)
+  //  APPROVED → no status change yet (officer must upload signed doc separately)
+  //  REJECTED → DRAFT (officer edits and re-submits)
 
   async approve(
     id: string,
@@ -272,16 +278,32 @@ export class PartnershipAgreementService {
       throw new NotFoundException('Partnership Agreement not found');
     }
 
-    if (agreement.status !== AgreementStatus.VERIFIED) {
+    if (agreement.status !== AgreementStatus.UNDER_REVIEW) {
       throw new BadRequestException(
-        'Agreement must be in VERIFIED status for approval decision',
+        'Agreement must be in UNDER_REVIEW status for director approval',
       );
     }
 
-    const isApproved = dto.status === AgreementApprovalStatus.APPROVED;
-    const nextStatus = isApproved
-      ? AgreementStatus.APPROVED
-      : AgreementStatus.REJECTED;
+    if (agreement.legal_review_status !== AgreementLegalReviewStatus.VERIFIED) {
+      throw new BadRequestException(
+        'Agreement must be legally verified before director approval',
+      );
+    }
+
+    if (
+      dto.status === AgreementApprovalStatus.REJECTED &&
+      !dto.note?.trim()
+    ) {
+      throw new BadRequestException(
+        'A rejection note is required when rejecting an agreement',
+      );
+    }
+
+    // If rejected → back to DRAFT; if approved → stays UNDER_REVIEW awaiting signature upload
+    const nextStatus =
+      dto.status === AgreementApprovalStatus.REJECTED
+        ? AgreementStatus.DRAFT
+        : AgreementStatus.UNDER_REVIEW;
 
     return this.prisma.partnershipAgreement.update({
       where: { id },
@@ -291,6 +313,181 @@ export class PartnershipAgreementService {
         approved_by_id: approverId,
         approved_at: new Date(),
         status: nextStatus,
+        // Reset legal review when rejected so it goes through the full cycle again
+        ...(dto.status === AgreementApprovalStatus.REJECTED && {
+          legal_review_status: AgreementLegalReviewStatus.PENDING,
+          legal_review_note: null,
+          legal_reviewed_by_id: null,
+          legal_reviewed_at: null,
+        }),
+      },
+      include: defaultInclude,
+    });
+  }
+
+  // ─── Sign ─────────────────────────────────────────────────────────────────
+  //  UNDER_REVIEW (with approval_status=APPROVED) → SIGNED
+
+  async sign(id: string, dto: UploadSignedAgreementDto, officerId: string) {
+    const agreement = await this.prisma.partnershipAgreement.findUnique({
+      where: { id },
+    });
+    if (!agreement) {
+      throw new NotFoundException('Partnership Agreement not found');
+    }
+
+    if (agreement.status !== AgreementStatus.UNDER_REVIEW) {
+      throw new BadRequestException(
+        'Agreement must be in UNDER_REVIEW status (director approved) to upload the signed document',
+      );
+    }
+
+    if (agreement.approval_status !== AgreementApprovalStatus.APPROVED) {
+      throw new BadRequestException(
+        'Agreement must be approved by the director before it can be signed',
+      );
+    }
+
+    return this.prisma.partnershipAgreement.update({
+      where: { id },
+      data: {
+        signed_version: dto.signed_version,
+        signing_date: new Date(dto.signing_date),
+        status: AgreementStatus.SIGNED,
+      },
+      include: defaultInclude,
+    });
+  }
+
+  // ─── Activate ─────────────────────────────────────────────────────────────
+  //  SIGNED → ACTIVE
+
+  async activate(id: string) {
+    const agreement = await this.prisma.partnershipAgreement.findUnique({
+      where: { id },
+    });
+    if (!agreement) {
+      throw new NotFoundException('Partnership Agreement not found');
+    }
+
+    if (agreement.status !== AgreementStatus.SIGNED) {
+      throw new BadRequestException(
+        'Agreement must be in SIGNED status to activate',
+      );
+    }
+
+    return this.prisma.partnershipAgreement.update({
+      where: { id },
+      data: {
+        status: AgreementStatus.ACTIVE,
+      },
+      include: defaultInclude,
+    });
+  }
+
+  // ─── Expire ───────────────────────────────────────────────────────────────
+  //  ACTIVE → EXPIRED  (typically called by a scheduled job or manually)
+
+  async expire(id: string) {
+    const agreement = await this.prisma.partnershipAgreement.findUnique({
+      where: { id },
+    });
+    if (!agreement) {
+      throw new NotFoundException('Partnership Agreement not found');
+    }
+
+    if (agreement.status !== AgreementStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Agreement must be in ACTIVE status to mark as expired',
+      );
+    }
+
+    return this.prisma.partnershipAgreement.update({
+      where: { id },
+      data: { status: AgreementStatus.EXPIRED },
+      include: defaultInclude,
+    });
+  }
+
+  // ─── Renew ────────────────────────────────────────────────────────────────
+  //  ACTIVE | EXPIRED → RENEWED
+
+  async renew(id: string, dto: RenewAgreementDto) {
+    const agreement = await this.prisma.partnershipAgreement.findUnique({
+      where: { id },
+    });
+    if (!agreement) {
+      throw new NotFoundException('Partnership Agreement not found');
+    }
+
+    if (
+      agreement.status !== AgreementStatus.ACTIVE &&
+      agreement.status !== AgreementStatus.EXPIRED
+    ) {
+      throw new BadRequestException(
+        'Agreement must be ACTIVE or EXPIRED to be renewed',
+      );
+    }
+
+    // Append a new amendment record if description/url provided
+    const existingAmendments = Array.isArray(agreement.amendments)
+      ? (agreement.amendments as unknown as AmendmentDto[])
+      : [];
+
+    const newAmendments: AmendmentDto[] =
+      dto.description || dto.url
+        ? [
+            ...existingAmendments,
+            {
+              description: dto.description ?? 'Agreement renewed',
+              url: dto.url ?? '',
+              amended_at: new Date().toISOString(),
+            },
+          ]
+        : existingAmendments;
+
+    return this.prisma.partnershipAgreement.update({
+      where: { id },
+      data: {
+        end_date: new Date(dto.end_date),
+        ...(dto.renewal_date && { renewal_date: new Date(dto.renewal_date) }),
+        amendments: newAmendments as unknown as Prisma.InputJsonValue,
+        status: AgreementStatus.RENEWED,
+      },
+      include: defaultInclude,
+    });
+  }
+
+  // ─── Terminate ────────────────────────────────────────────────────────────
+  //  ACTIVE | SIGNED | RENEWED → TERMINATED
+
+  async terminate(id: string, dto: TerminateAgreementDto) {
+    const agreement = await this.prisma.partnershipAgreement.findUnique({
+      where: { id },
+    });
+    if (!agreement) {
+      throw new NotFoundException('Partnership Agreement not found');
+    }
+
+    const terminatable: AgreementStatus[] = [
+      AgreementStatus.SIGNED,
+      AgreementStatus.ACTIVE,
+      AgreementStatus.RENEWED,
+    ];
+
+    if (!terminatable.includes(agreement.status as AgreementStatus)) {
+      throw new BadRequestException(
+        `Agreement must be in one of [${terminatable.join(', ')}] to be terminated`,
+      );
+    }
+
+    return this.prisma.partnershipAgreement.update({
+      where: { id },
+      data: {
+        status: AgreementStatus.TERMINATED,
+        ...(dto.termination_note && {
+          approval_note: dto.termination_note,
+        }),
       },
       include: defaultInclude,
     });

@@ -18,6 +18,7 @@ import { PartnershipOpportunityModule } from './models/partnership-opportunity/p
 import { PartnerModule } from './models/partner/partner.module';
 import { PartnershipEngagementModule } from './models/partnership-engagement/partnership-engagement.module';
 import { PartnershipAgreementModule } from './models/partnership-agreement/partnership-agreement.module';
+import { GroupModule } from './models/group/group.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { PartnershipAgreementModule } from './models/partnership-agreement/partn
     PartnerModule,
     PartnershipEngagementModule,
     PartnershipAgreementModule,
+    GroupModule,
 
     // RBAC modules
     RoleModule,

@@ -16,5 +16,6 @@ export enum RESOURCE {
   PARTNER = 'partner',
   PARTNERSHIP_ENGAGEMENT = 'partnership-engagement',
   PARTNERSHIP_AGREEMENT = 'partnership-agreement',
+  GROUP = 'group',
 }
 

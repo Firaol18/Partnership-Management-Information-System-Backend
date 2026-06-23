@@ -683,11 +683,13 @@ enum AgreementApprovalStatus {
 }
 
 enum AgreementStatus {
-  DRAFT         // Created, not yet submitted for legal review
-  UNDER_REVIEW  // Submitted to Legal Officer
-  VERIFIED      // Legal Officer verified
-  APPROVED      // Director approved
-  REJECTED      // Rejected at any stage
+  DRAFT
+  UNDER_REVIEW
+  SIGNED
+  ACTIVE
+  EXPIRED
+  RENEWED
+  TERMINATED
 }
 
 model PartnershipAgreement {

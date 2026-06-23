@@ -41,9 +41,11 @@ export enum AgreementApprovalStatus {
 export enum AgreementStatus {
   DRAFT = 'DRAFT',
   UNDER_REVIEW = 'UNDER_REVIEW',
-  VERIFIED = 'VERIFIED',
-  APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED',
+  SIGNED = 'SIGNED',
+  ACTIVE = 'ACTIVE',
+  EXPIRED = 'EXPIRED',
+  RENEWED = 'RENEWED',
+  TERMINATED = 'TERMINATED',
 }
 
 // ─── Nested Types ─────────────────────────────────────────────────────────────
@@ -263,6 +265,53 @@ export class ApprovePartnershipAgreementDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+// ─── Sign ─────────────────────────────────────────────────────────────────────
+
+export class UploadSignedAgreementDto {
+  @ApiProperty({ example: 'https://storage.example.com/signed.pdf', description: 'URL of the final signed document' })
+  @IsNotEmpty()
+  @IsString()
+  signed_version: string;
+
+  @ApiProperty({ example: '2026-06-23', description: 'Date the agreement was signed' })
+  @IsNotEmpty()
+  @IsDateString()
+  signing_date: string;
+}
+
+// ─── Renew ────────────────────────────────────────────────────────────────────
+
+export class RenewAgreementDto {
+  @ApiProperty({ example: '2027-06-23', description: 'New end date of the agreement' })
+  @IsNotEmpty()
+  @IsDateString()
+  end_date: string;
+
+  @ApiProperty({ example: '2027-05-23', required: false, description: 'New renewal notice/check date' })
+  @IsOptional()
+  @IsDateString()
+  renewal_date?: string;
+
+  @ApiProperty({ example: 'Agreement renewed for another year', required: false, description: 'Amendment description' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ example: 'https://storage.example.com/renewal_amendment.pdf', required: false, description: 'Amendment file URL' })
+  @IsOptional()
+  @IsString()
+  url?: string;
+}
+
+// ─── Terminate ────────────────────────────────────────────────────────────────
+
+export class TerminateAgreementDto {
+  @ApiProperty({ example: 'Terminated due to project completion', required: false, description: 'Reason/note for termination' })
+  @IsOptional()
+  @IsString()
+  termination_note?: string;
 }
 
 // ─── Search / Pagination ──────────────────────────────────────────────────────
