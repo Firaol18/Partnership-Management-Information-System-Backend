@@ -13,5 +13,8 @@ export enum RESOURCE {
   SMS_LOGS = 'sms-logs',
   EVENT_AND_VISIT = 'event-and-visit',
   PARTNERSHIP_OPPORTUNITY = 'partnership-opportunity',
+  PARTNER = 'partner',
+  PARTNERSHIP_ENGAGEMENT = 'partnership-engagement',
+  PARTNERSHIP_AGREEMENT = 'partnership-agreement',
 }
 

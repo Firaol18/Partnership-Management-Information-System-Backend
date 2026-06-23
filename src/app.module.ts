@@ -15,6 +15,9 @@ import { PermissionActionModule } from './models/auth/permission-action/permissi
 import { NotificationsModule } from './models/notifications/notifications.module';
 import { EventAndVisitModule } from './models/event-and-visit/event-and-visit.module';
 import { PartnershipOpportunityModule } from './models/partnership-opportunity/partnership-opportunity.module';
+import { PartnerModule } from './models/partner/partner.module';
+import { PartnershipEngagementModule } from './models/partnership-engagement/partnership-engagement.module';
+import { PartnershipAgreementModule } from './models/partnership-agreement/partnership-agreement.module';
 
 @Module({
   imports: [
@@ -37,6 +40,9 @@ import { PartnershipOpportunityModule } from './models/partnership-opportunity/p
     EmployeeModule,
     EventAndVisitModule,
     PartnershipOpportunityModule,
+    PartnerModule,
+    PartnershipEngagementModule,
+    PartnershipAgreementModule,
 
     // RBAC modules
     RoleModule,

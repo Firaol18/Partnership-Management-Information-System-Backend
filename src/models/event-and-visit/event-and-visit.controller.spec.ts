@@ -52,8 +52,18 @@ describe('EventAndVisitController', () => {
         event_type: EventType.CONFERENCE,
         date: '2026-06-25T09:00:00.000Z',
         venue: 'EAII Headquarters',
-        partner_representatives: 'Partner A',
-        eaii_representatives: 'EAII B',
+        partner_representatives: [
+          {
+            name: 'Partner A',
+            organization: 'UNDP',
+          },
+        ],
+        eaii_representatives: [
+          {
+            name: 'EAII B',
+            position: 'Director',
+          },
+        ],
       };
       const userClaim = { user: { sub: 'emp-1', username: 'testuser', role: 'Staff' } } as any;
       service.create.mockResolvedValue({ id: 'event-1', ...createDto });

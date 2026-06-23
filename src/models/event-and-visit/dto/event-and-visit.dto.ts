@@ -9,8 +9,34 @@ import {
   IsInt,
   Min,
   ValidateIf,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export class PartnerRepresentativeDto {
+  @ApiProperty({ example: 'John Doe', description: 'Name of the representative' })
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: 'UNDP', description: 'Organization of the representative' })
+  @IsNotEmpty()
+  @IsString()
+  organization: string;
+}
+
+export class EaiiRepresentativeDto {
+  @ApiProperty({ example: 'Abebe', description: 'Name of the representative' })
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: 'Director', description: 'Position of the representative' })
+  @IsNotEmpty()
+  @IsString()
+  position: string;
+}
 
 export enum EventType {
   OFFICIAL_VISIT = 'OFFICIAL_VISIT',
@@ -65,20 +91,24 @@ export class CreateEventAndVisitDto {
   venue: string;
 
   @ApiProperty({
-    example: 'Dr. Alice (Director of AI at Partner Org), Bob (AI Lead)',
+    type: [PartnerRepresentativeDto],
     description: 'Representatives from the partner organization',
   })
   @IsNotEmpty()
-  @IsString()
-  partner_representatives: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PartnerRepresentativeDto)
+  partner_representatives: PartnerRepresentativeDto[];
 
   @ApiProperty({
-    example: 'Dr. John (Deputy Director, EAII), Sarah (Research Lead)',
+    type: [EaiiRepresentativeDto],
     description: 'Representatives from EAII',
   })
   @IsNotEmpty()
-  @IsString()
-  eaii_representatives: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EaiiRepresentativeDto)
+  eaii_representatives: EaiiRepresentativeDto[];
 
   @ApiProperty({
     example: 'Agreed to initiate a joint research project on NLP in Amharic.',
@@ -120,15 +150,19 @@ export class UpdateEventAndVisitDto {
   @IsString()
   venue?: string;
 
-  @ApiProperty({ example: 'Dr. Alice, Bob', required: false })
+  @ApiProperty({ type: [PartnerRepresentativeDto], required: false })
   @IsOptional()
-  @IsString()
-  partner_representatives?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PartnerRepresentativeDto)
+  partner_representatives?: PartnerRepresentativeDto[];
 
-  @ApiProperty({ example: 'Dr. John, Sarah', required: false })
+  @ApiProperty({ type: [EaiiRepresentativeDto], required: false })
   @IsOptional()
-  @IsString()
-  eaii_representatives?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EaiiRepresentativeDto)
+  eaii_representatives?: EaiiRepresentativeDto[];
 
   @ApiProperty({ example: 'Agreements...', required: false })
   @IsOptional()

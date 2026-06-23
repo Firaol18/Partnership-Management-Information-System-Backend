@@ -92,6 +92,14 @@ model Employee {
   opportunitiesForwarded         PartnershipOpportunity[]  @relation("OppForwardedBy")
   opportunitiesReviewed          PartnershipOpportunity[]  @relation("OppReviewedBy")
   opportunitiesApproved          PartnershipOpportunity[]  @relation("OppApprovedBy")
+  engagementsCreated             PartnershipEngagement[]   @relation("EngagementCreatedBy")
+  engagementsAssigned            PartnershipEngagement[]   @relation("EngagementAssignedOfficer")
+  engagementsAssignedBy          PartnershipEngagement[]   @relation("EngagementAssignedBy")
+  engagementsReviewed            PartnershipEngagement[]   @relation("EngagementReviewedBy")
+  engagementsApproved            PartnershipEngagement[]   @relation("EngagementApprovedBy")
+  agreementsCreated              PartnershipAgreement[]    @relation("AgreementCreatedBy")
+  agreementsLegalReviewed        PartnershipAgreement[]    @relation("AgreementLegalReviewedBy")
+  agreementsApproved             PartnershipAgreement[]    @relation("AgreementApprovedBy")
 
   @@map("employees")
 }
@@ -111,6 +119,7 @@ model Group {
   children        Group[]   @relation("GroupParent")
   employees       Employee[]
   opportunities   PartnershipOpportunity[]
+  agreements      PartnershipAgreement[]
 
   @@index([parent_group_id])
   @@index([path])
@@ -401,6 +410,7 @@ enum EventType {
   OFFICIAL_VISIT
   CONFERENCE
   MEETING
+  OTHER
 }
 
 enum VerificationStatus {
@@ -421,8 +431,8 @@ model EventAndVisit {
   event_type              EventType
   date                    DateTime
   venue                   String
-  partner_representatives String             @db.Text
-  eaii_representatives    String             @db.Text
+  partner_representatives Json
+  eaii_representatives    Json
   agreements_reached      String?            @db.Text
   action_points           String?            @db.Text
 
@@ -533,10 +543,209 @@ model PartnershipOpportunity {
   created_by_id          String
   created_at             DateTime             @default(now())
   updated_at             DateTime             @updatedAt
+  engagements            PartnershipEngagement[]
 
   @@index([screening_status])
   @@index([verification_status])
   @@index([approval_status])
   @@index([forwarded_to_division_id])
   @@map("partnership_opportunities")
+}
+
+enum EngagementSource {
+  OPPORTUNITY
+  DIRECT
+}
+
+enum EngagementType {
+  CONFERENCE
+  MEETING
+  EMAIL_INQUIRY
+  WORKSHOP
+  VISIT
+  CALL
+  TRAINING
+  OTHER
+}
+
+enum AttachmentType {
+  MEETING_MINUTE
+  PRESENTATION
+  STATUS_PHOTOS
+  MEETING_VIDEOS
+  OTHER
+}
+
+enum EngagementStatus {
+  ASSIGNED
+  SUBMITTED
+  VERIFIED
+  APPROVED
+  REJECTED
+}
+
+model Partner {
+  id          String                  @id @default(uuid())
+  name        String                  @unique
+  created_at  DateTime                @default(now())
+  updated_at  DateTime                @updatedAt
+  engagements PartnershipEngagement[]
+  agreements  PartnershipAgreement[]
+
+  @@map("partners")
+}
+
+model PartnershipEngagement {
+  id                         String                  @id @default(uuid())
+  engagement_code            String?                 @unique // Format: ENG-YYYY-XXXX
+  
+  source                     EngagementSource
+  
+  partner_id                 String
+  partner                    Partner                 @relation(fields: [partner_id], references: [id])
+  
+  partnership_opportunity_id String?
+  partnership_opportunity    PartnershipOpportunity? @relation(fields: [partnership_opportunity_id], references: [id], onDelete: Cascade)
+  
+  assigned_officer_id        String
+  assigned_officer           Employee                @relation("EngagementAssignedOfficer", fields: [assigned_officer_id], references: [id])
+  assigned_by_id             String?
+  assigned_by                Employee?               @relation("EngagementAssignedBy", fields: [assigned_by_id], references: [id])
+  assigned_at                DateTime?
+  
+  // Officer Inputs (completed during submission)
+  date                       DateTime?
+  engagement_type            EngagementType?
+  
+  // Stored as JSON arrays of objects: e.g. [{"name": "John Doe", "organization": "UNDP"}]
+  partner_representatives    Json?
+  eaii_representatives       Json?
+  
+  // Discussion Summary
+  key_points                 String?                 @db.Text
+  agreed_action              String?                 @db.Text
+  next_steps                 String?                 @db.Text
+  
+  // Stored as JSON array of objects: e.g. [{"type": "PRESENTATION", "url": "https://..."}]
+  attachments                Json?
+
+  // Workflow / Status
+  status                     EngagementStatus        @default(ASSIGNED)
+  
+  review_status              VerificationStatus      @default(PENDING)
+  review_note                String?                 @db.Text
+  reviewed_by                Employee?               @relation("EngagementReviewedBy", fields: [reviewed_by_id], references: [id])
+  reviewed_by_id             String?
+  reviewed_at                DateTime?
+
+  approval_status            ApprovalStatus          @default(PENDING)
+  approval_note              String?                 @db.Text
+  approved_by                Employee?               @relation("EngagementApprovedBy", fields: [approved_by_id], references: [id])
+  approved_by_id             String?
+  approved_at                DateTime?
+
+  created_by                 Employee                @relation("EngagementCreatedBy", fields: [created_by_id], references: [id])
+  created_by_id              String
+  created_at                 DateTime                @default(now())
+  updated_at                 DateTime                @updatedAt
+  
+  agreements                 PartnershipAgreement[]
+
+  @@index([status])
+  @@index([review_status])
+  @@index([approval_status])
+  @@index([partnership_opportunity_id])
+  @@index([assigned_officer_id])
+  @@index([partner_id])
+  @@map("partnership_engagements")
+}
+
+enum AgreementType {
+  MOU
+  MOA
+  CONTRACT
+  GRANT_AGREEMENT
+  RESEARCH_AGREEMENT
+  NDA
+  OTHER
+}
+
+enum AgreementLegalReviewStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum AgreementApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AgreementStatus {
+  DRAFT         // Created, not yet submitted for legal review
+  UNDER_REVIEW  // Submitted to Legal Officer
+  VERIFIED      // Legal Officer verified
+  APPROVED      // Director approved
+  REJECTED      // Rejected at any stage
+}
+
+model PartnershipAgreement {
+  id                           String                     @id @default(uuid())
+  agreement_code               String?                    @unique // Format: AGR-YYYY-XXXX
+
+  // Agreement Information
+  title                        String
+  agreement_type               AgreementType
+
+  // Parties
+  partner_id                   String
+  partner                      Partner                    @relation(fields: [partner_id], references: [id])
+  eaii_responsible_division_id String?
+  eaii_responsible_division    Group?                     @relation(fields: [eaii_responsible_division_id], references: [id])
+
+  // Duration
+  start_date                   DateTime?
+  end_date                     DateTime?
+  renewal_date                 DateTime?
+
+  // Signatories — stored as JSON array: [{name, title, organization}]
+  signatories                  Json?
+  signing_date                 DateTime?
+
+  // Documents
+  draft_versions               Json?    // [{version, url, uploaded_at}]
+  signed_version               String?  // URL of the final signed document
+  amendments                   Json?    // [{description, url, amended_at}]
+
+  // Legal Review (Legal Officer)
+  legal_review_status          AgreementLegalReviewStatus @default(PENDING)
+  legal_review_note            String?                    @db.Text
+  legal_reviewed_by            Employee?                  @relation("AgreementLegalReviewedBy", fields: [legal_reviewed_by_id], references: [id])
+  legal_reviewed_by_id         String?
+  legal_reviewed_at            DateTime?
+
+  // Approval (Knowledge & Ecosystem Director)
+  approval_status              AgreementApprovalStatus    @default(PENDING)
+  approval_note                String?                    @db.Text
+  approved_by                  Employee?                  @relation("AgreementApprovedBy", fields: [approved_by_id], references: [id])
+  approved_by_id               String?
+  approved_at                  DateTime?
+
+  // Overall status
+  status                       AgreementStatus            @default(DRAFT)
+
+  // Optional link to the engagement that led to this agreement
+  partnership_engagement_id    String?
+  partnership_engagement       PartnershipEngagement?     @relation(fields: [partnership_engagement_id], references: [id])
+
+  created_by                   Employee                   @relation("AgreementCreatedBy", fields: [created_by_id], references: [id])
+  created_by_id                String
+  created_at                   DateTime                   @default(now())
+  updated_at                   DateTime                   @updatedAt
+
+  @@index([status])
+  @@index([partner_id])
+  @@index([agreement_type])
+  @@map("partnership_agreements")
 }
