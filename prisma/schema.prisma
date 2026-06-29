@@ -82,10 +82,11 @@ model Employee {
   employeeRoles                  EmployeeRole[]
   otps                           Otp[]
   notifications                  Notification[]
-  eventsCreated                  EventAndVisit[]           @relation("EventCreatedBy")
-  eventsVerified                 EventAndVisit[]           @relation("EventVerifiedBy")
-  eventsApproved                 EventAndVisit[]           @relation("EventApprovedBy")
-  eventsAssigned                 EventAndVisit[]           @relation("EventAssignedEmployee")
+  eventsCreated                  EventAndVisit[]           @relation("CreatedEventVisit")
+  eventsAssigned                 EventAndVisit[]           @relation("AssignedEventVisit")
+  eventsReviewed                 EventAndVisit[]           @relation("ReviewedEventVisit")
+  eventsApproved                 EventAndVisit[]           @relation("ApprovedEventVisit")
+  uploadedEventDocuments         EventVisitDocument[]      @relation("UploadedEventDocuments")
   opportunitiesCreated           PartnershipOpportunity[]  @relation("OppCreatedBy")
   opportunitiesScreened          PartnershipOpportunity[]  @relation("OppScreenedBy")
   opportunitiesVerified          PartnershipOpportunity[]  @relation("OppVerifiedBy")
@@ -406,11 +407,75 @@ enum IdType {
   BIRTH_CERTIFICATE
 }
 
+enum MainType {
+  EVENT
+  VISIT
+}
+
 enum EventType {
-  OFFICIAL_VISIT
   CONFERENCE
-  MEETING
+  WORKSHOP
+  SEMINAR
+  TRAINING
+  EXHIBITION
+  NETWORKING_EVENT
+  HACKATHON
+  DEMO_DAY
   OTHER
+}
+
+enum EventCategory {
+  INTERNAL
+  EXTERNAL
+  JOINT_EVENT
+}
+
+enum EventMode {
+  PHYSICAL
+  VIRTUAL
+  HYBRID
+}
+
+enum ParticipantType {
+  SPEAKER
+  GUEST
+  VIP_GUEST
+  REPRESENTATIVE
+}
+
+enum VisitType {
+  INCOMING_VISIT
+  OUTGOING_VISIT
+  TECHNICAL_VISIT
+  COURTESY_VISIT
+  SITE_VISIT
+  DELEGATION_VISIT
+  BENCHMARKING_VISIT
+  INTERNATIONAL_VISIT
+}
+
+enum VisitCategory {
+  INTERNAL
+  EXTERNAL
+  INTERNATIONAL
+}
+
+enum VisitPurpose {
+  PARTNERSHIP_DISCUSSION
+  PROJECT_MONITORING
+  TECHNOLOGY_DEMONSTRATION
+  KNOWLEDGE_EXCHANGE
+  RESEARCH_COLLABORATION
+  INVESTMENT_DISCUSSION
+  OTHER
+}
+
+enum WorkflowStatus {
+  DRAFT
+  SUBMITTED
+  ASSIGNED
+  APPROVED
+  REJECTED
 }
 
 enum VerificationStatus {
@@ -426,38 +491,153 @@ enum ApprovalStatus {
 }
 
 model EventAndVisit {
-  id                      String             @id @default(uuid())
-  event_name              String
-  event_type              EventType
-  date                    DateTime
-  venue                   String
-  partner_representatives Json
-  eaii_representatives    Json
-  agreements_reached      String?            @db.Text
-  action_points           String?            @db.Text
+  id                 String   @id @default(uuid())
+  record_code        String   @unique
+  main_type          MainType
 
-  // Workflow / Status
-  verification_status     VerificationStatus @default(PENDING)
-  verification_note       String?            @db.Text
-  verified_by             Employee?          @relation("EventVerifiedBy", fields: [verified_by_id], references: [id])
-  verified_by_id          String?
-  verified_at             DateTime?
+  // =====================
+  // EVENT FIELDS
+  // =====================
+  event_name         String?
+  event_type         EventType?
+  event_category     EventCategory?
+  event_date         DateTime?
+  start_time         DateTime?
+  end_time           DateTime?
+  venue              String?
+  organizer          String?
+  co_organizer       String?
+  event_mode         EventMode?
 
-  approval_status         ApprovalStatus     @default(PENDING)
-  approval_note           String?            @db.Text
-  approved_by             Employee?          @relation("EventApprovedBy", fields: [approved_by_id], references: [id])
-  approved_by_id          String?
-  approved_at             DateTime?
+  // =====================
+  // VISIT FIELDS
+  // =====================
+  visit_type         VisitType?
+  visit_category     VisitCategory?
+  visit_date         DateTime?
+  host_organization      String?
+  visiting_organization  String?
+  visit_location         String?
+  purpose_of_visit   VisitPurpose?
+  purpose_other      String?
 
-  assigned_employee       Employee?          @relation("EventAssignedEmployee", fields: [assigned_employee_id], references: [id])
-  assigned_employee_id    String?
+  // =====================
+  // BUDGET
+  // =====================
+  estimated_budget   Decimal? @db.Decimal(18,2)
+  actual_budget      Decimal? @db.Decimal(18,2)
+  funding_source     String?
 
-  created_by              Employee           @relation("EventCreatedBy", fields: [created_by_id], references: [id])
-  created_by_id           String
-  created_at              DateTime           @default(now())
-  updated_at              DateTime           @updatedAt
+  // =====================
+  // EVENT OUTCOMES
+  // =====================
+  key_discussions        String? @db.Text
+  agreements_reached     String? @db.Text
+  action_points          String? @db.Text
+  objectives_achieved    String? @db.Text
+  recommendations        String? @db.Text
 
+  // =====================
+  // VISIT OUTCOMES
+  // =====================
+  key_topics_discussed      String? @db.Text
+  opportunities_identified String? @db.Text
+  follow_up_actions        String? @db.Text
+
+  // =====================
+  // FOCAL PERSON
+  // =====================
+  focal_person_name     String?
+  focal_person_division String?
+  focal_person_email    String?
+
+  // =====================
+  // WORKFLOW
+  // =====================
+  assigned_to_id        String?
+  assigned_to           Employee? @relation("AssignedEventVisit", fields: [assigned_to_id], references: [id])
+  reviewed_by_id        String?
+  reviewed_by           Employee? @relation("ReviewedEventVisit", fields: [reviewed_by_id], references: [id])
+  approved_by_id        String?
+  approved_by           Employee? @relation("ApprovedEventVisit", fields: [approved_by_id], references: [id])
+  rejection_reason      String? @db.Text
+  status                WorkflowStatus @default(DRAFT)
+
+  created_by_id         String
+  created_by            Employee @relation("CreatedEventVisit", fields: [created_by_id], references: [id])
+
+  participants          EventVisitParticipant[]
+  documents             EventVisitDocument[]
+
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@index([main_type])
+  @@index([status])
   @@map("events_and_visits")
+}
+
+enum ParticipantRole {
+  PARTNER_PARTICIPANT
+  EAII_PARTICIPANT
+  DELEGATE
+}
+
+model EventVisitParticipant {
+  id                 String @id @default(uuid())
+  event_visit_id     String
+  event_visit        EventAndVisit @relation(fields: [event_visit_id], references: [id], onDelete: Cascade)
+  role               ParticipantRole
+  full_name          String
+  organization_name  String?
+  division           String?
+  position           String?
+  email              String?
+  phone_number       String?
+  participant_type   ParticipantType?
+  country            String?
+  status             String?
+
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@index([event_visit_id])
+  @@map("event_and_visit_participants")
+}
+
+enum AttachmentType {
+  AGENDA
+  ATTENDANCE_SHEET
+  PRESENTATION
+  PHOTO
+  VIDEO
+  EVENT_REPORT
+  VISIT_SCHEDULE
+  ATTENDANCE_LIST
+  MEETING_MINUTES
+  VISIT_REPORT
+  MEETING_MINUTE
+  STATUS_PHOTOS
+  MEETING_VIDEOS
+  OTHER
+}
+
+model EventVisitDocument {
+  id               String @id @default(uuid())
+  event_visit_id   String
+  event_visit      EventAndVisit @relation(fields: [event_visit_id], references: [id], onDelete: Cascade)
+  attachment_type  AttachmentType
+  file_name        String
+  file_url         String
+  uploaded_by_id   String
+  uploaded_by      Employee @relation("UploadedEventDocuments", fields: [uploaded_by_id], references: [id])
+
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([event_visit_id])
+  @@index([attachment_type])
+  @@map("event_and_visit_documents")
 }
 
 
@@ -568,13 +748,7 @@ enum EngagementType {
   OTHER
 }
 
-enum AttachmentType {
-  MEETING_MINUTE
-  PRESENTATION
-  STATUS_PHOTOS
-  MEETING_VIDEOS
-  OTHER
-}
+
 
 enum EngagementStatus {
   ASSIGNED

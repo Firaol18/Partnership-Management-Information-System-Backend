@@ -130,6 +130,94 @@ async function main() {
     },
   });
 
+  // 7. Seed sample Event and Visit
+  console.log('Seeding sample Event and Visit...');
+  
+  // Clear any existing sample event & visit entries to allow clean re-runs
+  await prisma.eventAndVisit.deleteMany({
+    where: {
+      record_code: { in: ['EV-2026-0001', 'EV-2026-0002'] }
+    }
+  });
+
+  await prisma.eventAndVisit.create({
+    data: {
+      record_code: 'EV-2026-0001',
+      main_type: 'EVENT',
+      event_name: 'PMIS Launch Conference',
+      event_type: 'CONFERENCE',
+      event_category: 'INTERNAL',
+      event_date: new Date('2026-07-15T09:00:00Z'),
+      venue: 'Main Hall, EAII',
+      organizer: 'EAII ICT',
+      event_mode: 'PHYSICAL',
+      estimated_budget: 15000.00,
+      actual_budget: 14200.00,
+      funding_source: 'Internal Budget',
+      key_discussions: 'Discussion on system rollout and onboarding of divisions.',
+      status: 'APPROVED',
+      created_by_id: superAdminEmployee.id,
+      approved_by_id: superAdminEmployee.id,
+      participants: {
+        create: [
+          {
+            role: 'EAII_PARTICIPANT',
+            full_name: 'Dr. Solomon',
+            division: 'Research & Development',
+            position: 'Lead Scientist',
+          },
+          {
+            role: 'PARTNER_PARTICIPANT',
+            full_name: 'Alice Johnson',
+            organization_name: 'UNDP',
+            position: 'Tech advisor',
+            email: 'alice.johnson@undp.org',
+          }
+        ]
+      },
+      documents: {
+        create: [
+          {
+            attachment_type: 'AGENDA',
+            file_name: 'agenda.pdf',
+            file_url: 'https://example.com/agenda.pdf',
+            uploaded_by_id: superAdminEmployee.id,
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.eventAndVisit.create({
+    data: {
+      record_code: 'EV-2026-0002',
+      main_type: 'VISIT',
+      visit_type: 'INCOMING_VISIT',
+      visit_category: 'INTERNATIONAL',
+      visit_date: new Date('2026-08-10T10:00:00Z'),
+      host_organization: 'EAII',
+      visiting_organization: 'MIT Research Lab',
+      visit_location: 'EAII Campus',
+      purpose_of_visit: 'RESEARCH_COLLABORATION',
+      focal_person_name: 'Dr. Solomon',
+      focal_person_division: 'Research & Development',
+      focal_person_email: 'solomon@eaii.org',
+      status: 'DRAFT',
+      created_by_id: superAdminEmployee.id,
+      participants: {
+        create: [
+          {
+            role: 'DELEGATE',
+            full_name: 'Prof. John Connor',
+            organization_name: 'MIT',
+            position: 'Director of AI Lab',
+            country: 'USA',
+          }
+        ]
+      }
+    }
+  });
+
   console.log('\nSeeding completed successfully!');
   console.log('--------------------------------------------------');
   console.log(`Default Super Admin Credentials:`);

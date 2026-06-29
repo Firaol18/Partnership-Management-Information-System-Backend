@@ -1,19 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventAndVisitService } from './event-and-visit.service';
 import { DatabaseService } from '../../common/database/database.service';
-import { EventType, VerificationStatus, ApprovalStatus } from './dto';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  MainType,
+  EventType,
+  EventCategory,
+  EventMode,
+  ParticipantRole,
+  AttachmentType,
+  WorkflowStatus,
+} from '@prisma/client';
 
 describe('EventAndVisitService', () => {
   let service: EventAndVisitService;
   let prisma: any;
 
   const mockPrisma = {
+    $transaction: jest.fn((cb) => cb(mockPrisma)),
     eventAndVisit: {
       create: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
+    },
+    eventVisitParticipant: {
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    eventVisitDocument: {
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
     },
     employee: {
       findUnique: jest.fn(),
@@ -43,40 +61,71 @@ describe('EventAndVisitService', () => {
   describe('create', () => {
     it('should create an event record and return it', async () => {
       const createDto = {
+        main_type: MainType.EVENT,
         event_name: 'AI Summit',
         event_type: EventType.CONFERENCE,
-        date: '2026-06-25T09:00:00.000Z',
+        event_category: EventCategory.INTERNAL,
+        event_date: '2026-06-25T00:00:00.000Z',
         venue: 'EAII Headquarters',
-        partner_representatives: [
-          { name: 'Partner A', organization: 'UNDP' },
+        participants: [
+          {
+            role: ParticipantRole.PARTNER_PARTICIPANT,
+            full_name: 'Partner A',
+            organization_name: 'UNDP',
+          },
         ],
-        eaii_representatives: [
-          { name: 'EAII B', position: 'Director' },
+        documents: [
+          {
+            attachment_type: AttachmentType.AGENDA,
+            file_name: 'agenda.pdf',
+            file_url: 'https://...',
+          },
         ],
-        agreements_reached: 'Agreements',
-        action_points: 'Action points',
       };
-      const mockResult = { id: 'event-1', ...createDto, created_by_id: 'emp-1' };
+
+      const mockResult = {
+        id: 'event-1',
+        record_code: 'EV-2026-0001',
+        ...createDto,
+        status: WorkflowStatus.DRAFT,
+        created_by_id: 'emp-1',
+      };
+
+      prisma.eventAndVisit.count.mockResolvedValue(0);
       prisma.eventAndVisit.create.mockResolvedValue(mockResult);
+      prisma.eventAndVisit.findUnique.mockResolvedValue(mockResult);
 
       const result = await service.create(createDto, 'emp-1');
-      expect(prisma.eventAndVisit.create).toHaveBeenCalledWith({
-        data: {
-          event_name: createDto.event_name,
-          event_type: createDto.event_type,
-          date: new Date(createDto.date),
-          venue: createDto.venue,
-          partner_representatives: createDto.partner_representatives,
-          eaii_representatives: createDto.eaii_representatives,
-          agreements_reached: createDto.agreements_reached,
-          action_points: createDto.action_points,
-          created_by_id: 'emp-1',
-        },
-        include: {
-          created_by: {
-            select: { id: true, name: true, username: true },
+
+      expect(prisma.eventAndVisit.count).toHaveBeenCalled();
+      expect(prisma.eventAndVisit.create).toHaveBeenCalled();
+      expect(prisma.eventVisitParticipant.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            event_visit_id: 'event-1',
+            role: ParticipantRole.PARTNER_PARTICIPANT,
+            full_name: 'Partner A',
+            organization_name: 'UNDP',
+            division: undefined,
+            position: undefined,
+            email: undefined,
+            phone_number: undefined,
+            participant_type: undefined,
+            country: undefined,
+            status: undefined,
           },
-        },
+        ],
+      });
+      expect(prisma.eventVisitDocument.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            event_visit_id: 'event-1',
+            attachment_type: AttachmentType.AGENDA,
+            file_name: 'agenda.pdf',
+            file_url: 'https://...',
+            uploaded_by_id: 'emp-1',
+          },
+        ],
       });
       expect(result).toEqual(mockResult);
     });
@@ -86,32 +135,21 @@ describe('EventAndVisitService', () => {
     const existingRecord = {
       id: 'event-1',
       event_name: 'AI Summit',
-      verification_status: VerificationStatus.PENDING,
-      approval_status: ApprovalStatus.PENDING,
+      status: WorkflowStatus.DRAFT,
       created_by_id: 'emp-1',
     };
 
-    it('should throw NotFoundException if event does not exist', async () => {
+    it('should throw NotFoundException if record does not exist', async () => {
       prisma.eventAndVisit.findUnique.mockResolvedValue(null);
       await expect(
         service.update('invalid-id', { event_name: 'New Name' }, 'emp-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException if event is already verified', async () => {
+    it('should throw BadRequestException if record status is not DRAFT or REJECTED', async () => {
       prisma.eventAndVisit.findUnique.mockResolvedValue({
         ...existingRecord,
-        verification_status: VerificationStatus.VERIFIED,
-      });
-      await expect(
-        service.update('event-1', { event_name: 'New Name' }, 'emp-1'),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException if event is already approved', async () => {
-      prisma.eventAndVisit.findUnique.mockResolvedValue({
-        ...existingRecord,
-        approval_status: ApprovalStatus.APPROVED,
+        status: WorkflowStatus.APPROVED,
       });
       await expect(
         service.update('event-1', { event_name: 'New Name' }, 'emp-1'),
@@ -125,116 +163,130 @@ describe('EventAndVisitService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should update the event successfully if valid', async () => {
+    it('should update successfully and recreate nested relations if provided', async () => {
       prisma.eventAndVisit.findUnique.mockResolvedValue(existingRecord);
       prisma.eventAndVisit.update.mockResolvedValue({
         ...existingRecord,
         event_name: 'New Name',
       });
 
-      const result = await service.update('event-1', { event_name: 'New Name' }, 'emp-1');
-      expect(result.event_name).toBe('New Name');
+      const updateDto = {
+        event_name: 'New Name',
+        participants: [],
+        documents: [],
+      };
+
+      const result = await service.update('event-1', updateDto, 'emp-1');
       expect(prisma.eventAndVisit.update).toHaveBeenCalled();
+      expect(prisma.eventVisitParticipant.deleteMany).toHaveBeenCalledWith({ where: { event_visit_id: 'event-1' } });
+      expect(prisma.eventVisitDocument.deleteMany).toHaveBeenCalledWith({ where: { event_visit_id: 'event-1' } });
     });
   });
 
-  describe('verify', () => {
-    it('should verify event and update status', async () => {
-      const existing = {
-        id: 'event-1',
-        verification_status: VerificationStatus.PENDING,
-      };
-      prisma.eventAndVisit.findUnique.mockResolvedValue(existing);
-      prisma.eventAndVisit.update.mockResolvedValue({
-        ...existing,
-        verification_status: VerificationStatus.VERIFIED,
-      });
+  describe('submit', () => {
+    it('should transition status to SUBMITTED if currently DRAFT or REJECTED', async () => {
+      const draftRecord = { id: 'event-1', status: WorkflowStatus.DRAFT, created_by_id: 'emp-1' };
+      prisma.eventAndVisit.findUnique.mockResolvedValue(draftRecord);
+      prisma.eventAndVisit.update.mockResolvedValue({ ...draftRecord, status: WorkflowStatus.SUBMITTED });
 
-      const result = await service.verify(
-        'event-1',
-        { status: VerificationStatus.VERIFIED, note: 'Looks good' },
-        'verifier-1',
-      );
-      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            verification_status: VerificationStatus.VERIFIED,
-            verification_note: 'Looks good',
-            verified_by_id: 'verifier-1',
-          }),
-        }),
-      );
+      const result = await service.submit('event-1', 'emp-1');
+      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: { status: WorkflowStatus.SUBMITTED },
+        include: expect.any(Object),
+      });
+      expect(result.status).toBe(WorkflowStatus.SUBMITTED);
+    });
+  });
+
+  describe('verify (review)', () => {
+    it('should set reviewed_by_id on record', async () => {
+      const submittedRecord = { id: 'event-1', status: WorkflowStatus.SUBMITTED };
+      prisma.eventAndVisit.findUnique.mockResolvedValue(submittedRecord);
+      prisma.eventAndVisit.update.mockResolvedValue({ ...submittedRecord, reviewed_by_id: 'reviewer-1' });
+
+      const result = await service.verify('event-1', { note: 'Reviewed' }, 'reviewer-1');
+      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: { reviewed_by_id: 'reviewer-1' },
+        include: expect.any(Object),
+      });
     });
   });
 
   describe('approve', () => {
-    it('should throw BadRequestException if event is not verified and being approved', async () => {
+    it('should approve event and set status and approved_by_id', async () => {
       const existing = {
         id: 'event-1',
-        verification_status: VerificationStatus.PENDING,
-        approval_status: ApprovalStatus.PENDING,
-      };
-      prisma.eventAndVisit.findUnique.mockResolvedValue(existing);
-
-      await expect(
-        service.approve('event-1', { status: ApprovalStatus.APPROVED, note: 'Approve now' }, 'approver-1'),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should approve event if verified', async () => {
-      const existing = {
-        id: 'event-1',
-        verification_status: VerificationStatus.VERIFIED,
-        approval_status: ApprovalStatus.PENDING,
+        status: WorkflowStatus.ASSIGNED,
       };
       prisma.eventAndVisit.findUnique.mockResolvedValue(existing);
       prisma.eventAndVisit.update.mockResolvedValue({
         ...existing,
-        approval_status: ApprovalStatus.APPROVED,
+        status: WorkflowStatus.APPROVED,
+        approved_by_id: 'approver-1',
       });
 
       const result = await service.approve(
         'event-1',
-        { status: ApprovalStatus.APPROVED, note: 'Approved' },
+        { status: 'APPROVED' },
         'approver-1',
       );
-      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            approval_status: ApprovalStatus.APPROVED,
-            approval_note: 'Approved',
-            approved_by_id: 'approver-1',
-          }),
-        }),
+      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: {
+          status: 'APPROVED',
+          approved_by_id: 'approver-1',
+          rejection_reason: null,
+        },
+        include: expect.any(Object),
+      });
+      expect(result.status).toBe(WorkflowStatus.APPROVED);
+    });
+
+    it('should reject event and set status and rejection_reason', async () => {
+      const existing = {
+        id: 'event-1',
+        status: WorkflowStatus.SUBMITTED,
+      };
+      prisma.eventAndVisit.findUnique.mockResolvedValue(existing);
+      prisma.eventAndVisit.update.mockResolvedValue({
+        ...existing,
+        status: WorkflowStatus.REJECTED,
+        rejection_reason: 'Too expensive',
+      });
+
+      const result = await service.approve(
+        'event-1',
+        { status: 'REJECTED', rejection_reason: 'Too expensive' },
+        'approver-1',
       );
+      expect(prisma.eventAndVisit.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: {
+          status: 'REJECTED',
+          rejection_reason: 'Too expensive',
+          approved_by_id: null,
+        },
+        include: expect.any(Object),
+      });
+      expect(result.status).toBe(WorkflowStatus.REJECTED);
     });
   });
 
   describe('assign', () => {
-    it('should throw NotFoundException if assigned employee does not exist', async () => {
-      prisma.eventAndVisit.findUnique.mockResolvedValue({ id: 'event-1' });
-      prisma.employee.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.assign('event-1', { employee_id: 'invalid-emp' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should assign employee successfully if they exist', async () => {
-      prisma.eventAndVisit.findUnique.mockResolvedValue({ id: 'event-1' });
+    it('should assign employee and update status to ASSIGNED', async () => {
+      prisma.eventAndVisit.findUnique.mockResolvedValue({ id: 'event-1', status: WorkflowStatus.SUBMITTED });
       prisma.employee.findUnique.mockResolvedValue({ id: 'emp-2' });
-      prisma.eventAndVisit.update.mockResolvedValue({ id: 'event-1', assigned_employee_id: 'emp-2' });
+      prisma.eventAndVisit.update.mockResolvedValue({ id: 'event-1', assigned_to_id: 'emp-2', status: WorkflowStatus.ASSIGNED });
 
       const result = await service.assign('event-1', { employee_id: 'emp-2' });
       expect(prisma.eventAndVisit.update).toHaveBeenCalledWith({
         where: { id: 'event-1' },
-        data: { assigned_employee_id: 'emp-2' },
-        include: {
-          created_by: { select: { id: true, name: true, username: true } },
-          assigned_employee: { select: { id: true, name: true, username: true } },
-        },
+        data: { assigned_to_id: 'emp-2', status: WorkflowStatus.ASSIGNED },
+        include: expect.any(Object),
       });
-      expect(result.assigned_employee_id).toBe('emp-2');
+      expect(result.status).toBe(WorkflowStatus.ASSIGNED);
     });
   });
 });

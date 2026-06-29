@@ -59,7 +59,7 @@ export class EventAndVisitController {
   @Patch(':id')
   @Resource([{ resource: RESOURCE.EVENT_AND_VISIT, actions: [ACTIONS.UPDATE] }])
   @ApiResponse({ status: 200, description: 'Record updated successfully' })
-  @ApiResponse({ status: 400, description: 'Bad Request - e.g. already verified or approved' })
+  @ApiResponse({ status: 400, description: 'Bad Request - e.g. already submitted or approved' })
   @ApiResponse({ status: 403, description: 'Forbidden - not the creator' })
   update(
     @Param('id') id: string,
@@ -72,15 +72,24 @@ export class EventAndVisitController {
   @Delete(':id')
   @Resource([{ resource: RESOURCE.EVENT_AND_VISIT, actions: [ACTIONS.DELETE] }])
   @ApiResponse({ status: 200, description: 'Record deleted successfully' })
-  @ApiResponse({ status: 400, description: 'Bad Request - e.g. already verified or approved' })
+  @ApiResponse({ status: 400, description: 'Bad Request - e.g. already submitted or approved' })
   @ApiResponse({ status: 403, description: 'Forbidden - not the creator' })
   remove(@Param('id') id: string, @Request() request: EmployeeTokenClaim) {
     return this.eventAndVisitService.remove(id, request.user.sub);
   }
 
+  @Post(':id/submit')
+  @Resource([{ resource: RESOURCE.EVENT_AND_VISIT, actions: [ACTIONS.UPDATE] }])
+  @ApiResponse({ status: 200, description: 'Record submitted successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request - e.g. not in DRAFT or REJECTED' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not the creator' })
+  submit(@Param('id') id: string, @Request() request: EmployeeTokenClaim) {
+    return this.eventAndVisitService.submit(id, request.user.sub);
+  }
+
   @Post(':id/verify')
   @Resource([{ resource: RESOURCE.EVENT_AND_VISIT, actions: [ACTIONS.VERIFY] }])
-  @ApiResponse({ status: 200, description: 'Record verified successfully' })
+  @ApiResponse({ status: 200, description: 'Record reviewed successfully' })
   verify(
     @Param('id') id: string,
     @Body() verifyDto: VerifyEventAndVisitDto,
@@ -91,8 +100,8 @@ export class EventAndVisitController {
 
   @Post(':id/approve')
   @Resource([{ resource: RESOURCE.EVENT_AND_VISIT, actions: [ACTIONS.APPROVE] }])
-  @ApiResponse({ status: 200, description: 'Record approved successfully' })
-  @ApiResponse({ status: 400, description: 'Bad Request - e.g. not verified yet' })
+  @ApiResponse({ status: 200, description: 'Record approved or rejected successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request - e.g. not submitted yet' })
   approve(
     @Param('id') id: string,
     @Body() approveDto: ApproveEventAndVisitDto,

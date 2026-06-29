@@ -3,7 +3,7 @@ import { EventAndVisitController } from './event-and-visit.controller';
 import { EventAndVisitService } from './event-and-visit.service';
 import { EmployeeAuthGuard } from '../../common/guards/employee-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { EventType, VerificationStatus, ApprovalStatus } from './dto';
+import { MainType, EventType, EventCategory, WorkflowStatus } from '@prisma/client';
 
 describe('EventAndVisitController', () => {
   let controller: EventAndVisitController;
@@ -15,6 +15,7 @@ describe('EventAndVisitController', () => {
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
+    submit: jest.fn(),
     verify: jest.fn(),
     approve: jest.fn(),
     assign: jest.fn(),
@@ -48,22 +49,14 @@ describe('EventAndVisitController', () => {
   describe('create', () => {
     it('should call service.create with correct data', async () => {
       const createDto = {
+        main_type: MainType.EVENT,
         event_name: 'AI Summit',
         event_type: EventType.CONFERENCE,
-        date: '2026-06-25T09:00:00.000Z',
+        event_category: EventCategory.INTERNAL,
+        event_date: '2026-06-25T00:00:00.000Z',
         venue: 'EAII Headquarters',
-        partner_representatives: [
-          {
-            name: 'Partner A',
-            organization: 'UNDP',
-          },
-        ],
-        eaii_representatives: [
-          {
-            name: 'EAII B',
-            position: 'Director',
-          },
-        ],
+        participants: [],
+        documents: [],
       };
       const userClaim = { user: { sub: 'emp-1', username: 'testuser', role: 'Staff' } } as any;
       service.create.mockResolvedValue({ id: 'event-1', ...createDto });
@@ -118,38 +111,49 @@ describe('EventAndVisitController', () => {
     });
   });
 
+  describe('submit', () => {
+    it('should call service.submit with id and sub', async () => {
+      const userClaim = { user: { sub: 'emp-1' } } as any;
+      service.submit.mockResolvedValue({ id: 'event-1', status: WorkflowStatus.SUBMITTED });
+
+      const result = await controller.submit('event-1', userClaim);
+      expect(service.submit).toHaveBeenCalledWith('event-1', 'emp-1');
+      expect(result.status).toBe(WorkflowStatus.SUBMITTED);
+    });
+  });
+
   describe('verify', () => {
     it('should call service.verify with id and body', async () => {
-      const verifyDto = { status: VerificationStatus.VERIFIED, note: 'Good' };
-      const userClaim = { user: { sub: 'verifier-1' } } as any;
-      service.verify.mockResolvedValue({ id: 'event-1', verification_status: VerificationStatus.VERIFIED });
+      const verifyDto = { note: 'Good' };
+      const userClaim = { user: { sub: 'reviewer-1' } } as any;
+      service.verify.mockResolvedValue({ id: 'event-1', reviewed_by_id: 'reviewer-1' });
 
       const result = await controller.verify('event-1', verifyDto, userClaim);
-      expect(service.verify).toHaveBeenCalledWith('event-1', verifyDto, 'verifier-1');
-      expect(result.verification_status).toBe(VerificationStatus.VERIFIED);
+      expect(service.verify).toHaveBeenCalledWith('event-1', verifyDto, 'reviewer-1');
+      expect(result.reviewed_by_id).toBe('reviewer-1');
     });
   });
 
   describe('approve', () => {
     it('should call service.approve with id and body', async () => {
-      const approveDto = { status: ApprovalStatus.APPROVED, note: 'Approve' };
+      const approveDto = { status: 'APPROVED' as const };
       const userClaim = { user: { sub: 'approver-1' } } as any;
-      service.approve.mockResolvedValue({ id: 'event-1', approval_status: ApprovalStatus.APPROVED });
+      service.approve.mockResolvedValue({ id: 'event-1', status: WorkflowStatus.APPROVED });
 
       const result = await controller.approve('event-1', approveDto, userClaim);
       expect(service.approve).toHaveBeenCalledWith('event-1', approveDto, 'approver-1');
-      expect(result.approval_status).toBe(ApprovalStatus.APPROVED);
+      expect(result.status).toBe(WorkflowStatus.APPROVED);
     });
   });
 
   describe('assign', () => {
     it('should call service.assign with id and employee_id', async () => {
       const assignDto = { employee_id: 'emp-2' };
-      service.assign.mockResolvedValue({ id: 'event-1', assigned_employee_id: 'emp-2' });
+      service.assign.mockResolvedValue({ id: 'event-1', assigned_to_id: 'emp-2' });
 
       const result = await controller.assign('event-1', assignDto);
       expect(service.assign).toHaveBeenCalledWith('event-1', assignDto);
-      expect(result.assigned_employee_id).toBe('emp-2');
+      expect(result.assigned_to_id).toBe('emp-2');
     });
   });
 });
